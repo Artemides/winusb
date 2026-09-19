@@ -25,3 +25,31 @@ pub enum Command {
     /// verify usb installed media
     Verift { device: PathBuf },
 }
+
+impl Cli {
+    pub fn run(self) -> crate::error::Result<()> {
+        match self.command {
+            Command::Inspect { iso } => {
+                let info = crate::iso::inspect(&iso)?;
+
+                println!("windows info media:\n {:?}", info);
+            }
+
+            Command::Devices => {
+                println!("listing Devices")
+            }
+
+            Command::Plan { iso, device } => {
+                println!("planning:\niso: {:?}\nusb:{:?}", iso, device)
+            }
+
+            Command::Write { iso, device } => {
+                println!("writing...:\niso: {:?}\nusb:{:?}", iso, device)
+            }
+
+            Command::Verift { device } => println!("verifying device {:?}", device),
+        }
+
+        Ok(())
+    }
+}
