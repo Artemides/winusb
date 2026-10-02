@@ -24,12 +24,16 @@ pub enum MediaOperation {
 #[derive(Debug, PartialEq, Eq)]
 pub struct MediaPlan {
     pub target_filesystem: TargetFilesystem,
+    pub source_file_count: u64,
+    pub source_file_bytes: u64,
     pub operations: Vec<MediaOperation>,
 }
 
 pub fn media_plan(media: &WindowsMediaInfo) -> MediaPlan {
     MediaPlan {
         target_filesystem: TargetFilesystem::Fat32,
+        source_file_count: media.contents.file_count,
+        source_file_bytes: media.contents.total_file_bytes,
         operations: install_image_operations(&media.install_image),
     }
 }

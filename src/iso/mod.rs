@@ -14,7 +14,7 @@ use hadris_optical::{
     OpenPolicy,
     cd::Borrowed,
     sync::OpenOpticalImage,
-    udf::{UdfVolume, dir::UdfDirEntry},
+    udf::{UdfDir, UdfVolume, dir::UdfDirEntry},
 };
 
 #[derive(Debug)]
@@ -42,6 +42,7 @@ pub struct WindowsMediaInfo {
     pub setup_exe: IsoEntry,
     pub uefi_boot: Option<IsoEntry>,
     pub install_images: Vec<WindowsInstallImage>,
+    pub contents: IsoContents,
 }
 
 #[derive(Debug)]
@@ -51,6 +52,13 @@ pub struct WindowsInstallImage {
     pub description: String,
     pub architechture: Option<String>,
     pub version: Option<String>,
+}
+
+#[derive(Debug, Default)]
+pub struct IsoContents {
+    pub file_count: u64,
+    pub directory_count: u64,
+    pub total_file_bytes: u64,
 }
 
 pub fn inspect(path: &Path) -> Result<WindowsMediaInfo> {
@@ -68,6 +76,7 @@ pub fn inspect(path: &Path) -> Result<WindowsMediaInfo> {
             let (uefi_boot, _) = IsoEntry::find(&udf, PathBuf::from(WIN_BOOT_MGR_EFI))?;
 
             let install_images = inspect_wim_metadata(path, &udf, &install_entry)?;
+            let contents = summarize_udf_contents(&udf)?;
 
             let win = WindowsMediaInfo {
                 boot_wim,
@@ -75,6 +84,7 @@ pub fn inspect(path: &Path) -> Result<WindowsMediaInfo> {
                 setup_exe,
                 uefi_boot: Some(uefi_boot),
                 install_images,
+                contents,
             };
 
             Ok(win)
@@ -187,4 +197,52 @@ fn inspect_wim_metadata(
             version: image.version.clone(),
         })
         .collect())
+}
+
+const MAX_UDF_DIRECTORY_DEPTH: usize = 64;
+
+fn summarize_udf_contents(volume: &UdfVolume<Borrowed<'_, File>>) -> Result<IsoContents> {
+    let root = volume
+        .root_dir()
+        .map_err(|error| Error::IsoInvalid(error.to_string()))?;
+
+    let mut contents = IsoContents::default();
+
+    summarize_directory(volume, root, 0, &mut contents)?;
+
+    Ok(contents)
+}
+
+fn summarize_directory(
+    volume: &UdfVolume<Borrowed<'_, File>>,
+    directory: UdfDir,
+    depth: usize,
+    contents: &mut IsoContents,
+) -> Result<()> {
+    if depth > MAX_UDF_DIRECTORY_DEPTH {
+        return Err(Error::IsoInvalid(String::from(
+            "ISO directory nesting is too deep",
+        )));
+    }
+
+    for entry in directory.entries() {
+        if entry.is_dir() {
+            contents.directory_count += 1;
+
+            let child = volume
+                .read_directory(&entry.icb)
+                .map_err(|error| Error::IsoInvalid(error.to_string()))?;
+
+            summarize_directory(volume, child, depth + 1, contents)?;
+        } else {
+            contents.file_count += 1;
+
+            contents.total_file_bytes = contents
+                .total_file_bytes
+                .checked_add(entry.size)
+                .ok_or_else(|| Error::IsoInvalid(String::from("ISO file size overflow")))?;
+        }
+    }
+
+    Ok(())
 }
