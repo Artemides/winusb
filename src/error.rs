@@ -7,6 +7,10 @@ pub enum Error {
     IsoIo(#[source] io::Error),
     #[error("Invalid ISO image: {0}")]
     IsoInvalid(String),
+    #[error("failed to inspect block device: {0}")]
+    DeviceIo(#[source] io::Error),
+    #[error("invalid block device: {0}")]
+    DeviceInvalid(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

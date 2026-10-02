@@ -36,7 +36,9 @@ impl Cli {
             }
 
             Command::Devices => {
-                println!("listing Devices")
+                for device in crate::device::list_block_devices()? {
+                    println!("{device:#?}");
+                }
             }
 
             Command::Plan { iso, device } => {
