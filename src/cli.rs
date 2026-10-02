@@ -40,7 +40,14 @@ impl Cli {
             }
 
             Command::Plan { iso, device } => {
-                println!("planning:\niso: {:?}\nusb:{:?}", iso, device)
+                let media = crate::iso::inspect(&iso)?;
+                let media_plan = crate::plan::media_plan(&media);
+
+                println!("\nMedia plan:");
+                println!("{media_plan:#?}");
+
+                println!("\nRequested target: {}", device.display());
+                println!("Target validation and device discovery are not implemented yet.");
             }
 
             Command::Write { iso, device } => {
