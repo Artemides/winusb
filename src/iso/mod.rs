@@ -2,10 +2,14 @@ mod inspect;
 
 use std::{
     fs::File,
+    io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
 
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    extent_reader::{Extent, ExtentReader},
+};
 use hadris_optical::{
     OpenPolicy,
     cd::Borrowed,
@@ -37,6 +41,16 @@ pub struct WindowsMediaInfo {
     pub install_image: IsoEntry,
     pub setup_exe: IsoEntry,
     pub uefi_boot: Option<IsoEntry>,
+    pub install_images: Vec<WindowsInstallImage>,
+}
+
+#[derive(Debug)]
+pub struct WindowsInstallImage {
+    pub index: u32,
+    pub name: String,
+    pub description: String,
+    pub architechture: Option<String>,
+    pub version: Option<String>,
 }
 
 pub fn inspect(path: &Path) -> Result<WindowsMediaInfo> {
@@ -47,11 +61,20 @@ pub fn inspect(path: &Path) -> Result<WindowsMediaInfo> {
 
     match image {
         OpenOpticalImage::Udf(udf) => {
+            let (boot_wim, _) = IsoEntry::find(&udf, PathBuf::from(WIN_BOOT_WIM))?;
+            let (install_image, install_entry) =
+                IsoEntry::find(&udf, PathBuf::from(WIN_INSTALL_WIM))?;
+            let (setup_exe, _) = IsoEntry::find(&udf, PathBuf::from(WIN_SETUP_EXE))?;
+            let (uefi_boot, _) = IsoEntry::find(&udf, PathBuf::from(WIN_BOOT_MGR_EFI))?;
+
+            let install_images = inspect_wim_metadata(path, &udf, &install_entry)?;
+
             let win = WindowsMediaInfo {
-                boot_wim: IsoEntry::find(&udf, PathBuf::from(WIN_BOOT_WIM))?,
-                install_image: IsoEntry::find(&udf, PathBuf::from(WIN_INSTALL_WIM))?,
-                setup_exe: IsoEntry::find(&udf, PathBuf::from(WIN_SETUP_EXE))?,
-                uefi_boot: Some(IsoEntry::find(&udf, PathBuf::from(WIN_BOOT_MGR_EFI))?),
+                boot_wim,
+                install_image,
+                setup_exe,
+                uefi_boot: Some(uefi_boot),
+                install_images,
             };
 
             Ok(win)
@@ -61,7 +84,10 @@ pub fn inspect(path: &Path) -> Result<WindowsMediaInfo> {
 }
 
 impl IsoEntry {
-    fn find(volume: &UdfVolume<Borrowed<'_, File>>, target_path: PathBuf) -> Result<Self> {
+    fn find(
+        volume: &UdfVolume<Borrowed<'_, File>>,
+        target_path: PathBuf,
+    ) -> Result<(Self, UdfDirEntry)> {
         let mut components = target_path.components();
 
         let filename = components
@@ -69,7 +95,10 @@ impl IsoEntry {
             .and_then(|cmp| cmp.as_os_str().to_str())
             .ok_or_else(|| Error::IsoInvalid(String::from("invalid iso")))?;
 
-        let root = volume.root_dir().unwrap();
+        let root = volume
+            .root_dir()
+            .map_err(|error| Error::IsoInvalid(error.to_string()))?;
+
         let entry_target = components
             .filter_map(|c| c.as_os_str().to_str())
             .try_fold(root, |dir, entry_path| {
@@ -77,9 +106,9 @@ impl IsoEntry {
                     .find(entry_path)
                     .ok_or_else(|| Error::IsoInvalid(String::from("invalid iso")))?;
 
-                let s = volume.read_directory(&entry.icb).unwrap();
-
-                Ok(s)
+                volume
+                    .read_directory(&entry.icb)
+                    .map_err(|error| Error::IsoInvalid(error.to_string()))
             })
             .and_then(|target| {
                 let entry = target
@@ -89,11 +118,14 @@ impl IsoEntry {
                 Ok(entry.to_owned())
             })?;
 
-        Ok(Self {
-            path: target_path,
-            size: entry_target.size,
-            kind: IsoEntryKind::from(&entry_target),
-        })
+        Ok((
+            Self {
+                path: target_path,
+                size: entry_target.size,
+                kind: IsoEntryKind::from(&entry_target),
+            },
+            entry_target,
+        ))
     }
 }
 
@@ -105,4 +137,54 @@ impl IsoEntryKind {
 
         Self::File
     }
+}
+
+fn inspect_wim_metadata(
+    iso_path: &Path,
+    volume: &UdfVolume<Borrowed<'_, File>>,
+    entry: &UdfDirEntry,
+) -> Result<Vec<WindowsInstallImage>> {
+    let layout = volume
+        .file_layout(entry)
+        .map_err(|error| Error::IsoInvalid(format!("cannot map install image: {error}")))?;
+    let extents = layout
+        .extents
+        .into_iter()
+        .map(|extent| Extent {
+            source_offset: extent.source_offset,
+            len: extent.length,
+        })
+        .collect();
+
+    let iso_file = File::open(iso_path).map_err(Error::IsoIo)?;
+    let mut reader = ExtentReader::new(iso_file, extents).map_err(Error::IsoIo)?;
+
+    let mut header = [0_u8; 8];
+    reader.read_exact(&mut header).map_err(Error::IsoIo)?;
+
+    if header != *b"MSWIM\0\0\0" {
+        return Err(Error::IsoInvalid(String::from(
+            "install image not a wim/esd container",
+        )));
+    }
+
+    reader.seek(SeekFrom::Start(0)).map_err(Error::IsoIo)?;
+
+    let mut parser = wim_parser::WimParser::from_reader(reader);
+
+    parser
+        .parse_full()
+        .map_err(|error| Error::IsoInvalid(format!("cannot parse wim metadata: {error}")))?;
+
+    Ok(parser
+        .get_images()
+        .iter()
+        .map(|image| WindowsInstallImage {
+            index: image.index,
+            name: image.name.clone(),
+            description: image.description.clone(),
+            architechture: image.architecture.clone(),
+            version: image.version.clone(),
+        })
+        .collect())
 }

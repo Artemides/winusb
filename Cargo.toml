@@ -10,3 +10,8 @@ hadris-optical = "2.4.0"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+wim-parser = { path = "/Users/edm/Desktop/personal/rust/forks/wim-parser-winusb"}
+
+[patch.crates-io]
+hadris-optical = { path = "/Users/edm/Desktop/personal/rust/forks/hadris-winusb/crates/optical/hadris-optical" }
+hadris-udf = { path = "/Users/edm/Desktop/personal/rust/forks/hadris-winusb/crates/optical/hadris-udf"}
