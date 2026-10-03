@@ -30,6 +30,14 @@ pub enum IsoEntryKind {
     Directory,
 }
 
+/// ISO Files
+#[derive(Debug, Clone)]
+pub struct IsoSourceFile {
+    pub path: PathBuf,
+    pub size: u64,
+    extents: Vec<Extent>,
+}
+
 const WIN_BOOT_WIM: &str = "sources/boot.wim";
 const WIN_INSTALL_WIM: &str = "sources/install.wim";
 const WIN_SETUP_EXE: &str = "sources/setup.exe";
@@ -149,6 +157,14 @@ impl IsoEntryKind {
     }
 }
 
+impl IsoSourceFile {
+    pub fn open(&self, iso_path: &Path) -> Result<ExtentReader<File>> {
+        let iso_file = File::open(iso_path).map_err(Error::IsoIo)?;
+
+        ExtentReader::new(iso_file, self.extents.clone()).map_err(Error::IsoIo)
+    }
+}
+
 fn inspect_wim_metadata(
     iso_path: &Path,
     volume: &UdfVolume<Borrowed<'_, File>>,
@@ -242,6 +258,83 @@ fn summarize_directory(
                 .checked_add(entry.size)
                 .ok_or_else(|| Error::IsoInvalid(String::from("ISO file size overflow")))?;
         }
+    }
+
+    Ok(())
+}
+
+pub fn source_files(iso_path: &Path) -> Result<Vec<IsoSourceFile>> {
+    let mut file = File::open(iso_path).map_err(Error::IsoIo)?;
+
+    let image = OpenOpticalImage::open(&mut file, OpenPolicy::PreferUdf)
+        .map_err(|error| Error::IsoInvalid(error.to_string()))?;
+
+    let OpenOpticalImage::Udf(volume) = image else {
+        return Err(Error::IsoInvalid(String::from("ISO UDF supported only")));
+    };
+
+    let root = volume
+        .root_dir()
+        .map_err(|error| Error::IsoInvalid(error.to_string()))?;
+
+    let mut files = Vec::new();
+
+    collect_source_files(&volume, &root, Path::new(""), 0, &mut files)?;
+
+    Ok(files)
+}
+
+fn collect_source_files(
+    volume: &UdfVolume<Borrowed<'_, File>>,
+    directory: &UdfDir,
+    parent: &Path,
+    depth: usize,
+    files: &mut Vec<IsoSourceFile>,
+) -> Result<()> {
+    if depth > MAX_UDF_DIRECTORY_DEPTH {
+        return Err(Error::IsoInvalid(String::from(
+            "ISO directory nesting is too deep",
+        )));
+    }
+
+    for entry in directory.entries() {
+        let path = parent.join(entry.name.clone());
+
+        if entry.is_dir() {
+            let child = volume
+                .read_directory(&entry.icb)
+                .map_err(|error| Error::IsoInvalid(error.to_string()))?;
+
+            collect_source_files(volume, &child, &path, depth + 1, files)?;
+
+            continue;
+        }
+
+        let layout = volume.file_layout(entry).map_err(|error| {
+            Error::IsoInvalid(format!("cannot map {}: {error}", path.display()))
+        })?;
+
+        if layout.length != entry.size {
+            return Err(Error::IsoInvalid(format!(
+                "invalid file layout for {}",
+                path.display()
+            )));
+        }
+
+        let extents = layout
+            .extents
+            .into_iter()
+            .map(|e| Extent {
+                source_offset: e.source_offset,
+                len: e.length,
+            })
+            .collect();
+
+        files.push(IsoSourceFile {
+            path,
+            size: entry.size,
+            extents,
+        });
     }
 
     Ok(())

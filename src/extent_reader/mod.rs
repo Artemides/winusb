@@ -7,6 +7,7 @@ pub struct ExtentReader<R> {
     position: u64,
 }
 
+#[derive(Debug, Clone)]
 pub struct Extent {
     pub source_offset: u64,
     pub len: u64,

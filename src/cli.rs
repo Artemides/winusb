@@ -1,5 +1,13 @@
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::{
+    io::{self, Write},
+    path::PathBuf,
+};
+
+use crate::{
+    device::BlockDevice,
+    error::{Error, Result},
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -59,7 +67,23 @@ impl Cli {
             }
 
             Command::Write { iso, device } => {
-                println!("writing...:\niso: {:?}\nusb:{:?}", iso, device)
+                let media = crate::iso::inspect(&iso)?;
+                let media_plan = crate::plan::media_plan(&media);
+                let target = crate::device::find_block_device(&device)?;
+
+                crate::plan::validate_target(&media_plan, &target)?;
+                crate::device::ensure_unmounted(&target)?;
+
+                confirm_target(&target)?;
+
+                let commands =
+                    crate::executor::format_target_commands(&media_plan.target_layout, &target)?;
+
+                println!("\nPlanned formatting commands:");
+
+                for command in commands {
+                    println!("  {}", command.display());
+                }
             }
 
             Command::Verift { device } => println!("verifying device {:?}", device),
@@ -67,4 +91,33 @@ impl Cli {
 
         Ok(())
     }
+}
+
+fn confirm_target(target: &BlockDevice) -> Result<()> {
+    println!(
+        "\n WARNING: all data on {} will be destroyed",
+        target.path.display()
+    );
+
+    println!("Model: {}", target.model.as_deref().unwrap_or("unknown"));
+    println!("Sixe: {} bytes", target.size_bytes);
+
+    print!(
+        "Type the kernel device name '{}' to continue: ",
+        target.kernel_name
+    );
+
+    io::stdout().flush().map_err(Error::ConfirmationIo)?;
+
+    let mut answer = String::new();
+
+    io::stdin()
+        .read_line(&mut answer)
+        .map_err(Error::ConfirmationIo)?;
+
+    if answer.trim() != target.kernel_name {
+        return Err(Error::Cancelled);
+    }
+
+    Ok(())
 }

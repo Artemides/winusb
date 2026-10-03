@@ -1,0 +1,137 @@
+use std::path::PathBuf;
+
+use crate::{
+    device::BlockDevice,
+    error::{Error, Result},
+    plan::{PartitionRole, PartitionSize, PartitionTableKind, TargetFilesystem, TargetLayout},
+};
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct CommandSpec {
+    pub program: &'static str,
+    pub args: Vec<String>,
+}
+
+impl CommandSpec {
+    pub fn display(&self) -> String {
+        std::iter::once(self.program.to_owned())
+            .chain(self.args.iter().cloned())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
+pub fn format_target_commands(
+    layout: &TargetLayout,
+    target: &BlockDevice,
+) -> Result<Vec<CommandSpec>> {
+    if layout.partition_table != PartitionTableKind::Gpt {
+        return Err(Error::InvalidPlan(String::from(
+            "only GPT target layouts are supported",
+        )));
+    }
+
+    let [partition] = layout.partitions.as_slice() else {
+        return Err(Error::InvalidPlan(String::from(
+            "expected exactly one target partition",
+        )));
+    };
+
+    if partition.number != 1
+        || partition.role != PartitionRole::EfiSystem
+        || partition.filesystem != TargetFilesystem::Fat32
+        || partition.size != PartitionSize::RemainingDeviceSpace
+    {
+        return Err(Error::InvalidPlan(String::from(
+            "unsupported target partition layout",
+        )));
+    }
+
+    let target_path = target.path.display().to_string();
+    let partition_path = partition_path(target, partition.number);
+
+    Ok(vec![
+        CommandSpec {
+            program: "parted",
+            args: vec![
+                "--script".into(),
+                "--align".into(),
+                "optimal".into(),
+                target_path,
+                "mklabel".into(),
+                "gpt".into(),
+                "mkpart".into(),
+                "WINUSB".into(),
+                "fat32".into(),
+                "1MiB".into(),
+                "100%".into(),
+                "set".into(),
+                "1".into(),
+                "esp".into(),
+                "on".into(),
+            ],
+        },
+        CommandSpec {
+            program: "udevadm",
+            args: vec!["settle".into()],
+        },
+        CommandSpec {
+            program: "mkfs.fat",
+            args: vec![
+                "-F".into(),
+                "32".into(),
+                "-n".into(),
+                "WINUSB".into(),
+                partition_path.display().to_string(),
+            ],
+        },
+    ])
+}
+
+fn partition_path(target: &BlockDevice, partition_number: u32) -> PathBuf {
+    let name_ends_in_digit = target
+        .kernel_name
+        .as_bytes()
+        .last()
+        .is_some_and(u8::is_ascii_digit);
+
+    let suffix = if name_ends_in_digit {
+        format!("p{partition_number}")
+    } else {
+        partition_number.to_string()
+    };
+
+    PathBuf::from(format!("{}{}", target.path.display(), suffix))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn device(name: &str) -> BlockDevice {
+        BlockDevice {
+            kernel_name: name.into(),
+            path: PathBuf::from(format!("/dev/{name}")),
+            size_bytes: 16 * 1024 * 1024 * 1024,
+            removable: true,
+            model: None,
+            serial: None,
+        }
+    }
+
+    #[test]
+    fn finds_standard_partition_path() {
+        assert_eq!(
+            partition_path(&device("sdb"), 1),
+            PathBuf::from("/dev/sdb1")
+        );
+    }
+
+    #[test]
+    fn finds_nvme_partition_path() {
+        assert_eq!(
+            partition_path(&device("nvme0n1"), 1),
+            PathBuf::from("/dev/nvme0n1p1")
+        );
+    }
+}

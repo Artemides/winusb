@@ -28,6 +28,12 @@ pub enum Error {
 
     #[error("target device or one of its partitions is mounted: {path}")]
     TargetMounted { path: PathBuf },
+
+    #[error("failed to read write confirmation: {0}")]
+    ConfirmationIo(#[source] io::Error),
+
+    #[error("operation cancelled")]
+    Cancelled,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

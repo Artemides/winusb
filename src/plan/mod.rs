@@ -27,8 +27,37 @@ pub enum MediaOperation {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub enum PartitionTableKind {
+    Gpt,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum PartitionRole {
+    EfiSystem,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum PartitionSize {
+    RemainingDeviceSpace,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct PartitionSpec {
+    pub number: u32,
+    pub role: PartitionRole,
+    pub filesystem: TargetFilesystem,
+    pub size: PartitionSize,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct TargetLayout {
+    pub partition_table: PartitionTableKind,
+    pub partitions: Vec<PartitionSpec>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct MediaPlan {
-    pub target_filesystem: TargetFilesystem,
+    pub target_layout: TargetLayout,
     pub source_file_count: u64,
     pub source_file_bytes: u64,
     pub operations: Vec<MediaOperation>,
@@ -36,7 +65,7 @@ pub struct MediaPlan {
 
 pub fn media_plan(media: &WindowsMediaInfo) -> MediaPlan {
     MediaPlan {
-        target_filesystem: TargetFilesystem::Fat32,
+        target_layout: TargetLayout::new(),
         source_file_count: media.contents.file_count,
         source_file_bytes: media.contents.total_file_bytes,
         operations: install_image_operations(&media.install_image),
@@ -84,13 +113,27 @@ pub fn validate_target(plan: &MediaPlan, target: &BlockDevice) -> Result<()> {
     Ok(())
 }
 
+impl TargetLayout {
+    fn new() -> Self {
+        Self {
+            partition_table: PartitionTableKind::Gpt,
+            partitions: vec![PartitionSpec {
+                number: 1,
+                role: PartitionRole::EfiSystem,
+                filesystem: TargetFilesystem::Fat32,
+                size: PartitionSize::RemainingDeviceSpace,
+            }],
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn test_plan(source_file_bytes: u64) -> MediaPlan {
         MediaPlan {
-            target_filesystem: TargetFilesystem::Fat32,
+            target_layout: TargetLayout::new(),
             source_file_count: 1,
             source_file_bytes,
             operations: Vec::new(),
