@@ -25,6 +25,9 @@ pub enum Error {
 
     #[error("invalid media plan: {0}")]
     InvalidPlan(String),
+
+    #[error("target device or one of its partitions is mounted: {path}")]
+    TargetMounted { path: PathBuf },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

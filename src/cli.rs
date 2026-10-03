@@ -1,8 +1,6 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use crate::{device, plan::media_plan};
-
 #[derive(Debug, Parser)]
 #[command(
     name = "winusb",
@@ -50,6 +48,7 @@ impl Cli {
                 let target = crate::device::find_block_device(&device)?;
 
                 crate::plan::validate_target(&media_plan, &target)?;
+                crate::device::ensure_unmounted(&target)?;
 
                 println!("\nMedia plan:");
                 println!("{media_plan:#?}");

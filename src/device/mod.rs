@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -70,6 +71,71 @@ pub fn find_block_device(path: &Path) -> Result<BlockDevice> {
     read_device(sys_path, kernel_name)
 }
 
+pub fn ensure_unmounted(device: &BlockDevice) -> Result<()> {
+    let sys_path = Path::new(SYS_BLOCK_PATH).join(&device.kernel_name);
+
+    let device_numbers = collect_related_device_numbers(&sys_path, &mut HashSet::new())?;
+
+    let mountinfo = fs::read_to_string("/proc/self/mountinfo").map_err(Error::DeviceIo)?;
+
+    for line in mountinfo.lines() {
+        if let Some(device_number) = mount_device_number(line)
+            && device_numbers.contains(device_number)
+        {
+            return Err(Error::TargetMounted {
+                path: device.path.clone(),
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn collect_related_device_numbers(
+    sys_path: &Path,
+    visited: &mut HashSet<String>,
+) -> Result<HashSet<String>> {
+    let kernel_name = sys_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| Error::DeviceInvalid(String::from("invalid sysfs block-device path")))?
+        .to_owned();
+
+    if !visited.insert(kernel_name) {
+        return Ok(HashSet::new());
+    }
+
+    let mut nums = HashSet::new();
+
+    nums.insert(read_required_string(&sys_path.join("dev"))?);
+
+    // include partitions
+    for entry in fs::read_dir(sys_path).map_err(Error::DeviceIo)? {
+        let entry = entry.map_err(Error::DeviceIo)?;
+        let child_path = entry.path();
+
+        if child_path.join("partition").exists() {
+            nums.extend(collect_related_device_numbers(&child_path, visited)?);
+        }
+    }
+
+    // include device mapper
+
+    let holders_path = sys_path.join("holders");
+    if holders_path.exists() {
+        for entry in fs::read_dir(holders_path).map_err(Error::DeviceIo)? {
+            let entry = entry.map_err(Error::DeviceIo)?;
+            let holder_name = entry.file_name();
+
+            let holder_path = Path::new(SYS_BLOCK_PATH).join(holder_name);
+
+            nums.extend(collect_related_device_numbers(&holder_path, visited)?);
+        }
+    }
+
+    Ok(nums)
+}
+
 fn read_device(sys_path: PathBuf, kernel_name: String) -> Result<BlockDevice> {
     let sectors = read_required_u64(&sys_path.join("size"))?;
 
@@ -108,4 +174,10 @@ fn read_optional_string(path: &Path) -> Option<String> {
         .ok()
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
+}
+
+fn mount_device_number(line: &str) -> Option<&str> {
+    // mountinfo format begins:
+    // mount-id parent-id major:minor root mount-point ...
+    line.split_whitespace().nth(2)
 }
