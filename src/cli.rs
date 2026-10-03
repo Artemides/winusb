@@ -31,7 +31,9 @@ pub enum Command {
     /// wirte windows installation media
     Write { iso: PathBuf, device: PathBuf },
     /// verify usb installed media
-    Verift { device: PathBuf },
+    Verify { device: PathBuf },
+    /// copy iso files  to and ordinary staging dir
+    Stage { iso: PathBuf, destination: PathBuf },
 }
 
 impl Cli {
@@ -86,7 +88,18 @@ impl Cli {
                 }
             }
 
-            Command::Verift { device } => println!("verifying device {:?}", device),
+            Command::Verify { device } => println!("verifying device {:?}", device),
+
+            Command::Stage { iso, destination } => {
+                let media = crate::iso::inspect(&iso)?;
+                let plan = crate::plan::media_plan(&media);
+
+                let report = crate::executor::stage_iso_tree(&iso, &plan, &destination)?;
+
+                println!("Staging completed:");
+                println!("{report:#?}");
+                println!("install.wim was intentionally excluded.");
+            }
         }
 
         Ok(())

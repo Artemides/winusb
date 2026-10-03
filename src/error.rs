@@ -34,6 +34,12 @@ pub enum Error {
 
     #[error("operation cancelled")]
     Cancelled,
+
+    #[error("failed to stage  ISO: files: {0}")]
+    StageIo(#[source] io::Error),
+
+    #[error("invalid staging request: {0}")]
+    StageInvalid(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

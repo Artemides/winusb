@@ -1,9 +1,19 @@
-use std::path::PathBuf;
+use std::{
+    fs::{self, OpenOptions},
+    io,
+    path::{Component, Path, PathBuf},
+};
 
 use crate::{
     device::BlockDevice,
-    error::{Error, Result},
-    plan::{PartitionRole, PartitionSize, PartitionTableKind, TargetFilesystem, TargetLayout},
+    error::{
+        Error::{self},
+        Result,
+    },
+    plan::{
+        MediaOperation, MediaPlan, PartitionRole, PartitionSize, PartitionTableKind,
+        TargetFilesystem, TargetLayout,
+    },
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -134,4 +144,99 @@ mod tests {
             PathBuf::from("/dev/nvme0n1p1")
         );
     }
+}
+
+/// STAGING
+
+#[derive(Debug, Default)]
+pub struct StageReport {
+    pub copied_files: u64,
+    pub copied_bytes: u64,
+    pub skipped_files: u64,
+}
+
+pub fn stage_iso_tree(iso_path: &Path, plan: &MediaPlan, dest: &Path) -> Result<StageReport> {
+    prepare_empty_destination(dest)?;
+
+    let e_paths = plan
+        .operations
+        .iter()
+        .find_map(|op| match op {
+            MediaOperation::CopyIsoTree { excluding } => Some(excluding),
+            _ => None,
+        })
+        .ok_or_else(|| Error::InvalidPlan(String::from("plan has no ISO copy operation")))?;
+
+    let mut report = StageReport::default();
+
+    for source in crate::iso::source_files(iso_path)? {
+        if e_paths.iter().any(|path| path == &source.path) {
+            report.skipped_files += 1;
+
+            continue;
+        }
+
+        let out_path = staging_path(dest, &source.path)?;
+
+        if let Some(parent) = out_path.parent() {
+            fs::create_dir_all(parent).map_err(Error::StageIo)?;
+        }
+
+        let mut input = source.open(iso_path)?;
+        let mut output = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&out_path)
+            .map_err(Error::StageIo)?;
+
+        let copied = io::copy(&mut input, &mut output).map_err(Error::StageIo)?;
+
+        if copied != source.size {
+            return Err(Error::StageInvalid(format!(
+                "copied size mismatch for {}",
+                source.path.display()
+            )));
+        }
+
+        report.copied_files += 1;
+        report.copied_bytes += copied;
+    }
+
+    Ok(report)
+}
+
+fn prepare_empty_destination(dest: &Path) -> Result<()> {
+    if dest.exists() {
+        let mut entries = fs::read_dir(dest).map_err(Error::StageIo)?;
+
+        if entries.next().is_some() {
+            return Err(Error::StageInvalid(format!(
+                "destination is not empty: {}",
+                dest.display()
+            )));
+        };
+
+        return Ok(());
+    }
+
+    fs::create_dir_all(dest).map_err(Error::StageIo)
+}
+
+fn staging_path(dest: &Path, relative_path: &Path) -> Result<PathBuf> {
+    let mut output = dest.to_path_buf();
+
+    for cmp in relative_path.components() {
+        match cmp {
+            Component::Normal(part) => output.push(part),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(Error::StageInvalid(format!(
+                    "unsafe ISO path: {}",
+                    relative_path.display()
+                )));
+            }
+        }
+    }
+
+    Ok(output)
 }
