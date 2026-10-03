@@ -41,6 +41,35 @@ pub fn list_block_devices() -> Result<Vec<BlockDevice>> {
     Ok(devices)
 }
 
+pub fn find_block_device(path: &Path) -> Result<BlockDevice> {
+    let canonical_path = fs::canonicalize(path).map_err(Error::DeviceIo)?;
+    let kernel_name = canonical_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            Error::DeviceInvalid(format!("invalid block device-path: {}", path.display()))
+        })?
+        .to_owned();
+
+    let sys_path = Path::new(SYS_BLOCK_PATH).join(&kernel_name);
+
+    if !sys_path.exists() {
+        return Err(Error::DeviceInvalid(format!(
+            "not a known linux block device: {}",
+            path.display()
+        )));
+    };
+
+    if sys_path.join("partition").exists() {
+        return Err(Error::DeviceInvalid(format!(
+            "target must be a whole device, not a partition: {}",
+            path.display()
+        )));
+    };
+
+    read_device(sys_path, kernel_name)
+}
+
 fn read_device(sys_path: PathBuf, kernel_name: String) -> Result<BlockDevice> {
     let sectors = read_required_u64(&sys_path.join("size"))?;
 

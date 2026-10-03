@@ -1,6 +1,8 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+use crate::{device, plan::media_plan};
+
 #[derive(Debug, Parser)]
 #[command(
     name = "winusb",
@@ -45,11 +47,16 @@ impl Cli {
                 let media = crate::iso::inspect(&iso)?;
                 let media_plan = crate::plan::media_plan(&media);
 
+                let target = crate::device::find_block_device(&device)?;
+
+                crate::plan::validate_target(&media_plan, &target)?;
+
                 println!("\nMedia plan:");
                 println!("{media_plan:#?}");
 
                 println!("\nRequested target: {}", device.display());
-                println!("Target validation and device discovery are not implemented yet.");
+
+                println!("plan ok");
             }
 
             Command::Write { iso, device } => {
