@@ -92,3 +92,34 @@ fn copy_directory(
 
     Ok(())
 }
+
+pub fn validate_payload_tree(source: &Path) -> Result<()> {
+    let required_files = [
+        "bootmgr",
+        "bootmgr.efi",
+        "sources/boot.wim",
+        "sources/setup.exe",
+    ];
+
+    for relative_path in required_files {
+        let path = source.join(relative_path);
+
+        if !path.is_file() {
+            return Err(Error::PayloadInvalid(format!(
+                "required payload file is missing: {}",
+                path.display()
+            )));
+        }
+    }
+
+    let install_wim = source.join("sources/install.wim");
+    let install_swm = source.join("sources/install.swm");
+
+    if !install_wim.is_file() && !install_swm.is_file() {
+        return Err(Error::PayloadInvalid(String::from(
+            "payload needs sources/install.wim or sources/install.swm",
+        )));
+    }
+
+    Ok(())
+}

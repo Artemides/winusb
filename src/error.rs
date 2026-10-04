@@ -80,6 +80,12 @@ pub enum Error {
 
     #[error("invalid payload: {0}")]
     PayloadInvalid(String),
+
+    #[error("failed to create or manage mount point: {0}")]
+    MountIo(#[source] io::Error),
+
+    #[error("write failed: {operation}; cleanup also failed: {cleanup}")]
+    WriteCleanupFailed { operation: String, cleanup: String },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

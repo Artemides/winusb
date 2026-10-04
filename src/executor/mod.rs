@@ -3,6 +3,7 @@ pub mod mount;
 pub mod prepare;
 pub mod requirements;
 pub mod split;
+pub mod write;
 
 use std::{
     fs::{self, OpenOptions},
@@ -125,7 +126,7 @@ pub fn execute_commands(commands: &[CommandSpec]) -> Result<()> {
     Ok(())
 }
 
-fn partition_path(target: &BlockDevice, partition_number: u32) -> PathBuf {
+pub fn partition_path(target: &BlockDevice, partition_number: u32) -> PathBuf {
     let name_ends_in_digit = target
         .kernel_name
         .as_bytes()
