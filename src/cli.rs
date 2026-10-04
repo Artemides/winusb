@@ -42,6 +42,12 @@ pub enum Command {
         dest: PathBuf,
         temp_dir: PathBuf,
     },
+    /// prepare complete Windows files without writing a USB device
+    Prepare {
+        iso: PathBuf,
+        destination: PathBuf,
+        temp_dir: PathBuf,
+    },
 }
 
 impl Cli {
@@ -126,6 +132,25 @@ impl Cli {
                     crate::executor::split::split_install_wim(&iso, &plan, &dest, &temp_dir)?;
 
                 println!("WIM splitting completed:");
+                println!("{report:#?}");
+            }
+
+            Command::Prepare {
+                iso,
+                destination,
+                temp_dir,
+            } => {
+                let media = crate::iso::inspect(&iso)?;
+                let plan = crate::plan::media_plan(&media);
+
+                let report = crate::executor::prepare::prepare_payload(
+                    &iso,
+                    &plan,
+                    &destination,
+                    &temp_dir,
+                )?;
+
+                println!("Payload preparation completed:");
                 println!("{report:#?}");
             }
         }
