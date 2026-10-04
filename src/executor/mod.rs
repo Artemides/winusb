@@ -1,3 +1,5 @@
+pub mod split;
+
 use std::{
     fs::{self, OpenOptions},
     io,

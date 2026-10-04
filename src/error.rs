@@ -49,6 +49,12 @@ pub enum Error {
 
     #[error("wimlib did not run successfully: {0}")]
     WimlibUnavailable(std::process::ExitStatus),
+
+    #[error("wimlib split failed: {0}")]
+    WimlibSplitFailed(std::process::ExitStatus),
+
+    #[error("invalid split WIM output: {0}")]
+    WimlibOutputInvalid(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -36,6 +36,12 @@ pub enum Command {
     Stage { iso: PathBuf, destination: PathBuf },
     /// requirements
     Requirements,
+    /// wim splitting
+    SplitStage {
+        iso: PathBuf,
+        dest: PathBuf,
+        temp_dir: PathBuf,
+    },
 }
 
 impl Cli {
@@ -106,6 +112,21 @@ impl Cli {
                 crate::executor::check_wimlib()?;
 
                 println!("ok")
+            }
+
+            Command::SplitStage {
+                iso,
+                dest,
+                temp_dir,
+            } => {
+                let media = crate::iso::inspect(&iso)?;
+                let plan = crate::plan::media_plan(&media);
+
+                let report =
+                    crate::executor::split::split_install_wim(&iso, &plan, &dest, &temp_dir)?;
+
+                println!("WIM splitting completed:");
+                println!("{report:#?}");
             }
         }
 
