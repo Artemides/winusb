@@ -94,12 +94,7 @@ fn copy_directory(
 }
 
 pub fn validate_payload_tree(source: &Path) -> Result<()> {
-    let required_files = [
-        "bootmgr",
-        "bootmgr.efi",
-        "sources/boot.wim",
-        "sources/setup.exe",
-    ];
+    let required_files = ["bootmgr.efi", "sources/boot.wim", "sources/setup.exe"];
 
     for relative_path in required_files {
         let path = source.join(relative_path);
