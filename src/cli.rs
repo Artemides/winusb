@@ -62,16 +62,14 @@ impl Cli {
             Command::Plan { iso, device } => {
                 let media = crate::iso::inspect(&iso)?;
                 let media_plan = crate::plan::media_plan(&media);
-
                 let target = crate::device::find_block_device(&device)?;
 
-                crate::plan::validate_target(&media_plan, &target)?;
-                crate::device::ensure_unmounted(&target)?;
+                let write_plan = crate::plan::write::build_write_plan(iso, media_plan, target)?;
 
-                println!("\nMedia plan:");
-                println!("{media_plan:#?}");
+                crate::device::ensure_unmounted(&write_plan.target)?;
 
-                println!("\nRequested target: {}", device.display());
+                println!("\nWrite plan:");
+                println!("{write_plan:#?}");
 
                 println!("plan ok");
             }
@@ -81,14 +79,16 @@ impl Cli {
                 let media_plan = crate::plan::media_plan(&media);
                 let target = crate::device::find_block_device(&device)?;
 
-                crate::plan::validate_target(&media_plan, &target)?;
-                crate::device::ensure_unmounted(&target)?;
+                let write_plan = crate::plan::write::build_write_plan(iso, media_plan, target)?;
 
-                confirm_target(&target)?;
+                crate::device::ensure_unmounted(&write_plan.target)?;
 
-                let commands =
-                    crate::executor::format_target_commands(&media_plan.target_layout, &target)?;
+                confirm_target(&write_plan.target)?;
 
+                let commands = crate::executor::format_target_commands(
+                    &write_plan.media.target_layout,
+                    &write_plan.target,
+                )?;
                 println!("\nPlanned formatting commands:");
 
                 for command in commands {

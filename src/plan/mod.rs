@@ -1,3 +1,5 @@
+pub mod write;
+
 use std::path::PathBuf;
 
 use crate::{
