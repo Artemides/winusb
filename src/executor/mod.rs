@@ -1,3 +1,4 @@
+pub mod copy;
 pub mod mount;
 pub mod prepare;
 pub mod requirements;

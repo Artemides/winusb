@@ -74,6 +74,12 @@ pub enum Error {
         command: String,
         status: std::process::ExitStatus,
     },
+
+    #[error("failed to copy payload: {0}")]
+    PayloadIo(#[source] io::Error),
+
+    #[error("invalid payload: {0}")]
+    PayloadInvalid(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

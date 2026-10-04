@@ -21,6 +21,13 @@ pub fn unmount_commands(mountpoint: &Path) -> Vec<CommandSpec> {
     }]
 }
 
+pub fn sync_commands() -> Vec<CommandSpec> {
+    vec![CommandSpec {
+        program: "sync",
+        args: Vec::new(),
+    }]
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -50,6 +57,17 @@ mod tests {
             vec![CommandSpec {
                 program: "umount",
                 args: vec!["/mnt/winusb".into()],
+            }]
+        );
+    }
+
+    #[test]
+    fn builds_sync_command() {
+        assert_eq!(
+            sync_commands(),
+            vec![CommandSpec {
+                program: "sync",
+                args: Vec::new(),
             }]
         );
     }
