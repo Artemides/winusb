@@ -116,6 +116,7 @@ impl Cli {
             }
             Command::Requirements => {
                 crate::executor::check_wimlib()?;
+                crate::executor::requirements::check_write_tools()?;
 
                 println!("ok")
             }

@@ -1,4 +1,3 @@
-pub mod mount;
 pub mod prepare;
 pub mod requirements;
 pub mod split;
@@ -109,7 +108,7 @@ pub fn execute_commands(commands: &[CommandSpec]) -> Result<()> {
         let command = spec.display();
 
         let status = Command::new(spec.program)
-            .args(&spec.args)
+            .args(spec.args)
             .status()
             .map_err(|source| Error::CommandIo {
                 command: command.clone(),

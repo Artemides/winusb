@@ -55,6 +55,25 @@ pub enum Error {
 
     #[error("invalid split WIM output: {0}")]
     WimlibOutputInvalid(String),
+
+    #[error("required program not found: {program}; install with: {install_hint}")]
+    RequiredToolMissing {
+        program: &'static str,
+        install_hint: &'static str,
+    },
+
+    #[error("failed to start command `{command}`: {source}")]
+    CommandIo {
+        command: String,
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("command failed: `{command}` with status {status}")]
+    CommandFailed {
+        command: String,
+        status: std::process::ExitStatus,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
