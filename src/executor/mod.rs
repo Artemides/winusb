@@ -2,6 +2,7 @@ use std::{
     fs::{self, OpenOptions},
     io,
     path::{Component, Path, PathBuf},
+    process::Command,
 };
 
 use crate::{
@@ -239,4 +240,23 @@ fn staging_path(dest: &Path, relative_path: &Path) -> Result<PathBuf> {
     }
 
     Ok(output)
+}
+
+pub fn check_wimlib() -> Result<()> {
+    let status = Command::new("wimlib-imagex")
+        .arg("--version")
+        .status()
+        .map_err(|error| {
+            if error.kind() == io::ErrorKind::NotFound {
+                Error::WimlibMissing
+            } else {
+                Error::WimlibIo(error)
+            }
+        })?;
+
+    if !status.success() {
+        return Err(Error::WimlibUnavailable(status));
+    }
+
+    Ok(())
 }

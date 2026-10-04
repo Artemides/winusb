@@ -34,6 +34,8 @@ pub enum Command {
     Verify { device: PathBuf },
     /// copy iso files  to and ordinary staging dir
     Stage { iso: PathBuf, destination: PathBuf },
+    /// requirements
+    Requirements,
 }
 
 impl Cli {
@@ -99,6 +101,11 @@ impl Cli {
                 println!("Staging completed:");
                 println!("{report:#?}");
                 println!("install.wim was intentionally excluded.");
+            }
+            Command::Requirements => {
+                crate::executor::check_wimlib()?;
+
+                println!("ok")
             }
         }
 

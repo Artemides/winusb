@@ -40,6 +40,15 @@ pub enum Error {
 
     #[error("invalid staging request: {0}")]
     StageInvalid(String),
+
+    #[error("failed to check wimlib-checkio: {0}")]
+    WimlibIo(#[source] io::Error),
+
+    #[error("sudo dnf install wimlib required")]
+    WimlibMissing,
+
+    #[error("wimlib did not run successfully: {0}")]
+    WimlibUnavailable(std::process::ExitStatus),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
