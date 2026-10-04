@@ -3,6 +3,7 @@ pub mod mount;
 pub mod prepare;
 pub mod requirements;
 pub mod split;
+pub mod verify;
 pub mod write;
 
 use std::{

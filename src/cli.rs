@@ -29,9 +29,20 @@ pub enum Command {
     /// operations to perform
     Plan { iso: PathBuf, device: PathBuf },
     /// wirte windows installation media
-    Write { iso: PathBuf, device: PathBuf },
-    /// verify usb installed media
-    Verify { device: PathBuf },
+    Write {
+        iso: PathBuf,
+        payload: PathBuf,
+        device: PathBuf,
+        #[arg(long, default_value = "/var/tmp")]
+        mount_base: PathBuf,
+    },
+    /// verify USB-installed Windows media without modifying it
+    Verify {
+        device: PathBuf,
+
+        #[arg(long, default_value = "/var/tmp")]
+        mount_base: PathBuf,
+    },
     /// copy iso files  to and ordinary staging dir
     Stage { iso: PathBuf, destination: PathBuf },
     /// requirements
@@ -80,29 +91,41 @@ impl Cli {
                 println!("plan ok");
             }
 
-            Command::Write { iso, device } => {
+            Command::Write {
+                iso,
+                device,
+                payload,
+                mount_base,
+            } => {
                 let media = crate::iso::inspect(&iso)?;
                 let media_plan = crate::plan::media_plan(&media);
                 let target = crate::device::find_block_device(&device)?;
 
                 let write_plan = crate::plan::write::build_write_plan(iso, media_plan, target)?;
 
+                crate::executor::copy::validate_payload_tree(&payload)?;
                 crate::device::ensure_unmounted(&write_plan.target)?;
 
                 confirm_target(&write_plan.target)?;
 
-                let commands = crate::executor::format_target_commands(
-                    &write_plan.media.target_layout,
-                    &write_plan.target,
+                let report = crate::executor::write::write_prepared_payload(
+                    &write_plan,
+                    &payload,
+                    &mount_base,
                 )?;
-                println!("\nPlanned formatting commands:");
 
-                for command in commands {
-                    println!("  {}", command.display());
-                }
+                println!("USB write completed:");
+                println!("{report:#?}");
             }
 
-            Command::Verify { device } => println!("verifying device {:?}", device),
+            Command::Verify { device, mount_base } => {
+                let target = crate::device::find_block_device(&device)?;
+
+                let report = crate::executor::verify::verify_written_payload(&target, &mount_base)?;
+
+                println!("USB verification completed:");
+                println!("{report:#?}");
+            }
 
             Command::Stage { iso, destination } => {
                 let media = crate::iso::inspect(&iso)?;

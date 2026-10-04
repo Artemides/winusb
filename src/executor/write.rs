@@ -5,7 +5,7 @@ use tempfile::Builder;
 use crate::{
     error::{Error, Result},
     executor::{
-        copy::{CopyReport, copy_payload_tree, validate_payload_tree},
+        copy::{CopyReport, copy_payload_tree},
         execute_commands, format_target_commands,
         mount::{mount_commands, sync_commands, unmount_commands},
         partition_path,
@@ -24,8 +24,6 @@ pub fn write_prepared_payload(
     payload_dir: &Path,
     mount_base: &Path,
 ) -> Result<WriteReport> {
-    validate_payload_tree(payload_dir)?;
-
     if !mount_base.is_dir() {
         return Err(Error::PayloadInvalid(format!(
             "mount base is not a directory: {}",
