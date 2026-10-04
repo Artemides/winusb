@@ -96,7 +96,7 @@ pub fn split_install_wim(
         .arg("split")
         .arg(&temp_path)
         .arg(&output)
-        .arg(format!("{part_size_mebibytes}M"))
+        .arg(part_size_mebibytes.to_string())
         .status()
         .map_err(Error::WimlibIo)?;
 
