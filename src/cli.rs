@@ -7,6 +7,7 @@ use std::{
 use crate::{
     device::BlockDevice,
     error::{Error, Result},
+    executor::prepare::SetupCustomization,
 };
 
 #[derive(Debug, Parser)]
@@ -58,6 +59,9 @@ pub enum Command {
         iso: PathBuf,
         destination: PathBuf,
         temp_dir: PathBuf,
+
+        #[arg(long)]
+        bypass_checks: bool,
     },
 }
 
@@ -163,15 +167,23 @@ impl Cli {
                 iso,
                 destination,
                 temp_dir,
+                bypass_checks,
             } => {
                 let media = crate::iso::inspect(&iso)?;
                 let plan = crate::plan::media_plan(&media);
+
+                let customization = if bypass_checks {
+                    SetupCustomization::BypassChecks
+                } else {
+                    SetupCustomization::Standard
+                };
 
                 let report = crate::executor::prepare::prepare_payload(
                     &iso,
                     &plan,
                     &destination,
                     &temp_dir,
+                    customization,
                 )?;
 
                 println!("Payload preparation completed:");

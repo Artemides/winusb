@@ -1,9 +1,9 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::{
     error::Result,
     executor::{
-        StageReport,
+        StageReport, setup,
         split::{self, SplitReport},
         stage_iso_tree,
     },
@@ -14,6 +14,14 @@ use crate::{
 pub struct PrepareReport {
     pub stage: StageReport,
     pub split: Option<SplitReport>,
+    pub customization: SetupCustomization,
+    pub customization_path: Option<PathBuf>,
+}
+
+#[derive(Debug)]
+pub enum SetupCustomization {
+    Standard,
+    BypassChecks,
 }
 
 pub fn prepare_payload(
@@ -21,6 +29,7 @@ pub fn prepare_payload(
     plan: &MediaPlan,
     dest: &Path,
     temp_dir: &Path,
+    customization: SetupCustomization,
 ) -> Result<PrepareReport> {
     let stage = stage_iso_tree(iso_path, plan, dest)?;
 
@@ -35,5 +44,12 @@ pub fn prepare_payload(
         None
     };
 
-    Ok(PrepareReport { stage, split })
+    let customization_path = setup::setup_customization(dest, &customization)?;
+
+    Ok(PrepareReport {
+        stage,
+        split,
+        customization,
+        customization_path,
+    })
 }
