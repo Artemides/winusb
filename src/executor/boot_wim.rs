@@ -23,7 +23,7 @@ pub struct BootWimInspection {
 }
 
 pub fn check_bootwim_tools() -> Result<()> {
-    let status = Command::new("hivexregedit")
+    Command::new("hivexregedit")
         .arg("--help")
         .status()
         .map_err(|e| {
@@ -36,10 +36,6 @@ pub fn check_bootwim_tools() -> Result<()> {
                 Error::WimlibIo(e)
             }
         })?;
-
-    if !status.success() {
-        return Err(Error::BootWimInvalid("hivexregedit run error".to_string()));
-    }
 
     Ok(())
 }
