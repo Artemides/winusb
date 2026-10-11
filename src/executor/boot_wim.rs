@@ -234,7 +234,8 @@ fn extract_system_hive(wim: &Path, dest: &Path) -> Result<()> {
         .arg(SETUP_IMAGE_INDEX.to_string())
         .arg(SYSTEM_HIVE_PATH)
         .arg("--dest-dir")
-        .arg(dest);
+        .arg(dest)
+        .arg("--preserve-dir-structure");
 
     run_patch_command(extract, description)
 }
