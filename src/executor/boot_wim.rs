@@ -115,6 +115,40 @@ const LAB_CONFIG_REG: &str = r#"Windows Registry Editor Version 5.00
 "BypassRAMCheck"=dword:00000001
 "#;
 
+const AUTOUNATTEND_PATH: &str = "Autounattend.xml";
+const BYPASS_UNATTEND_XML: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+  <settings pass="windowsPE">
+    <component
+      name="Microsoft-Windows-Setup"
+      processorArchitecture="amd64"
+      publicKeyToken="31bf3856ad364e35"
+      language="neutral"
+      versionScope="nonSxS"
+      xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <RunSynchronous>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Description>Bypass TPM check</Description>
+          <Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassTPMCheck /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>2</Order>
+          <Description>Bypass Secure Boot check</Description>
+          <Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassSecureBootCheck /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>3</Order>
+          <Description>Bypass RAM check</Description>
+          <Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassRAMCheck /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+      </RunSynchronous>
+    </component>
+  </settings>
+</unattend>
+"#;
+
 #[derive(Debug)]
 pub struct BootWimPatchReport {
     pub boot_wim: PathBuf,
@@ -145,13 +179,15 @@ pub fn patch_staged_boot_wim(staging_dir: &Path) -> Result<BootWimPatchReport> {
     //observe <-
     let extracted = work_dir.path().join("extracted");
     fs::create_dir(&extracted).map_err(Error::PayloadIo)?;
-
-    extract_system_hive(&candidate_wim, &extracted)?;
+    extract_wim_file(&candidate_wim, SYSTEM_HIVE_PATH, &extracted)?;
 
     let system_hive = extracted.join(SYSTEM_HIVE_PATH);
-    // labconfig in extracted?
-    let reg_file = work_dir.path().join("labconfig.reg");
 
+    // files to merge
+    let unattend_file = work_dir.path().join(AUTOUNATTEND_PATH);
+    fs::write(&unattend_file, BYPASS_UNATTEND_XML).map_err(Error::PayloadIo)?;
+
+    let reg_file = work_dir.path().join("labconfig.reg");
     fs::write(&reg_file, LAB_CONFIG_REG).map_err(Error::PayloadIo)?;
 
     let merge_command = format!(
@@ -170,7 +206,8 @@ pub fn patch_staged_boot_wim(staging_dir: &Path) -> Result<BootWimPatchReport> {
 
     run_patch_command(merge, merge_command)?;
 
-    let update_command = wim_update_command(&system_hive)?;
+    let system_update = wim_add_command(&system_hive, "/Windows/System32/config/SYSTEM")?;
+    let unattend_update = wim_add_command(&unattend_file, "/Autounattend.xml")?;
 
     let mut update = Command::new("wimlib-imagex");
     update
@@ -178,7 +215,9 @@ pub fn patch_staged_boot_wim(staging_dir: &Path) -> Result<BootWimPatchReport> {
         .arg(&candidate_wim)
         .arg(SETUP_IMAGE_INDEX.to_string())
         .arg("--command")
-        .arg(&update_command);
+        .arg(&system_update)
+        .arg("--command")
+        .arg(&unattend_update);
 
     run_patch_command(
         update,
@@ -186,7 +225,7 @@ pub fn patch_staged_boot_wim(staging_dir: &Path) -> Result<BootWimPatchReport> {
             "wimlib-imagex update {} {} --command {}",
             candidate_wim.display(),
             SETUP_IMAGE_INDEX,
-            update_command,
+            system_update,
         ),
     )?;
 
@@ -201,9 +240,15 @@ pub fn patch_staged_boot_wim(staging_dir: &Path) -> Result<BootWimPatchReport> {
     let verified = work_dir.path().join("verified");
     fs::create_dir(&verified).map_err(Error::PayloadIo)?;
 
-    extract_system_hive(&candidate_wim, &verified)?;
-
+    extract_wim_file(&candidate_wim, SYSTEM_HIVE_PATH, &verified)?;
+    extract_wim_file(&candidate_wim, AUTOUNATTEND_PATH, &verified)?;
     verify_lab_config(&verified.join(SYSTEM_HIVE_PATH))?;
+    let verified_unattend = verified.join(AUTOUNATTEND_PATH);
+    if fs::read(&verified_unattend).map_err(Error::PayloadIo)? != BYPASS_UNATTEND_XML.as_bytes() {
+        return Err(Error::BootWimInvalid(
+            "embedded Autounattend.xml differs from the expected bypass fallback".into(),
+        ));
+    }
 
     fs::rename(&candidate_wim, &boot_wim).map_err(Error::PayloadIo)?;
 
@@ -219,25 +264,27 @@ pub fn patch_staged_boot_wim(staging_dir: &Path) -> Result<BootWimPatchReport> {
     })
 }
 
-fn extract_system_hive(wim: &Path, dest: &Path) -> Result<()> {
-    let description = format!(
-        "wimlib-imagex extract {} {} {}",
-        wim.display(),
-        SETUP_IMAGE_INDEX,
-        SYSTEM_HIVE_PATH,
-    );
-
+fn extract_wim_file(wim: &Path, image_path: &str, dest: &Path) -> Result<()> {
     let mut extract = Command::new("wimlib-imagex");
+
     extract
         .arg("extract")
         .arg(wim)
         .arg(SETUP_IMAGE_INDEX.to_string())
-        .arg(SYSTEM_HIVE_PATH)
+        .arg(image_path)
         .arg("--dest-dir")
         .arg(dest)
         .arg("--preserve-dir-structure");
 
-    run_patch_command(extract, description)
+    run_patch_command(
+        extract,
+        format!(
+            "wimlib-imagex extract {} {} {}",
+            wim.display(),
+            SETUP_IMAGE_INDEX,
+            image_path,
+        ),
+    )
 }
 
 fn verify_lab_config(system_hive: &Path) -> Result<()> {
@@ -282,18 +329,18 @@ fn verify_lab_config(system_hive: &Path) -> Result<()> {
     Ok(())
 }
 
-fn wim_update_command(system_hive: &Path) -> Result<String> {
-    let source = system_hive.to_str().ok_or_else(|| {
-        Error::BootWimInvalid(String::from("SYSTEM hive path is not valid UTF-8"))
+fn wim_add_command(source: &Path, dest: &str) -> Result<String> {
+    let source = source.to_str().ok_or_else(|| {
+        Error::BootWimInvalid(String::from("WIM update source path is not valid UTF-8"))
     })?;
 
     if source.contains('\'') || source.contains('\n') || source.contains('\r') {
         return Err(Error::BootWimInvalid(format!(
-            "unsupported SYSTEM hive path: {source}"
+            "unsupported WIM update source path: {source}"
         )));
     }
 
-    Ok(format!("add '{source}' '/Windows/System32/config/SYSTEM'"))
+    Ok(format!("add '{source}' '{dest}'"))
 }
 
 fn run_patch_command(mut command: Command, description: String) -> Result<()> {
