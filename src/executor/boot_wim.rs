@@ -1,7 +1,7 @@
 use std::{
     fs::{self, File},
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
 };
 
 use hadris_optical::iso::io;
@@ -209,23 +209,26 @@ pub fn patch_staged_boot_wim(staging_dir: &Path) -> Result<BootWimPatchReport> {
     let system_update = wim_add_command(&system_hive, "/Windows/System32/config/SYSTEM")?;
     let unattend_update = wim_add_command(&unattend_file, "/Autounattend.xml")?;
 
+    let update_script = work_dir.path().join("update.txt");
+    fs::write(
+        &update_script,
+        format!("{system_update}\n{unattend_update}"),
+    )
+    .map_err(Error::PayloadIo)?;
+    let update_input = fs::File::open(&update_script).map_err(Error::PayloadIo)?;
+
     let mut update = Command::new("wimlib-imagex");
     update
         .arg("update")
         .arg(&candidate_wim)
         .arg(SETUP_IMAGE_INDEX.to_string())
-        .arg("--command")
-        .arg(&system_update)
-        .arg("--command")
-        .arg(&unattend_update);
+        .stdin(Stdio::from(update_input));
 
     run_patch_command(
         update,
         format!(
-            "wimlib-imagex update {} {} --command {}",
-            candidate_wim.display(),
-            SETUP_IMAGE_INDEX,
-            system_update,
+            "wimlib-imagex update {:?} {} < {:?}",
+            candidate_wim, SETUP_IMAGE_INDEX, update_script,
         ),
     )?;
 
