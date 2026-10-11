@@ -109,7 +109,7 @@ const BYPASS_VALUES: [&str; 3] = ["BypassTPMCheck", "BypassSecureBootCheck", "By
 
 const LAB_CONFIG_REG: &str = r#"Windows Registry Editor Version 5.00
 
-[HKEY_LOCAL_MACHINE\SYSTEM\Setup\LabConfig]
+[\Setup\LabConfig]
 "BypassTPMCheck"=dword:00000001
 "BypassSecureBootCheck"=dword:00000001
 "BypassRAMCheck"=dword:00000001
