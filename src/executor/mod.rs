@@ -1,8 +1,8 @@
+pub mod boot_wim;
 pub mod copy;
 pub mod mount;
 pub mod prepare;
 pub mod requirements;
-pub mod setup;
 pub mod split;
 pub mod verify;
 pub mod write;

@@ -86,6 +86,15 @@ pub enum Error {
 
     #[error("write failed: {operation}; cleanup also failed: {cleanup}")]
     WriteCleanupFailed { operation: String, cleanup: String },
+
+    #[error("invalid boot wim: {0}")]
+    BootWimInvalid(String),
+
+    #[error("boot wim command failed: `{command}` with status {status}")]
+    BootWimCommandFailed {
+        command: String,
+        status: std::process::ExitStatus,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -1,9 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::{
     error::Result,
     executor::{
-        StageReport, setup,
+        StageReport,
+        boot_wim::{BootWimPatchReport, check_bootwim_tools, patch_staged_boot_wim},
         split::{self, SplitReport},
         stage_iso_tree,
     },
@@ -15,7 +16,7 @@ pub struct PrepareReport {
     pub stage: StageReport,
     pub split: Option<SplitReport>,
     pub customization: SetupCustomization,
-    pub customization_path: Option<PathBuf>,
+    pub boot_wim_patch: Option<BootWimPatchReport>,
 }
 
 #[derive(Debug)]
@@ -44,12 +45,19 @@ pub fn prepare_payload(
         None
     };
 
-    let customization_path = setup::setup_customization(dest, &customization)?;
+    if matches!(customization, SetupCustomization::BypassChecks) {
+        check_bootwim_tools()?;
+    }
+
+    let boot_wim = match customization {
+        SetupCustomization::Standard => None,
+        SetupCustomization::BypassChecks => Some(patch_staged_boot_wim(dest)?),
+    };
 
     Ok(PrepareReport {
         stage,
         split,
         customization,
-        customization_path,
+        boot_wim_patch: boot_wim,
     })
 }
